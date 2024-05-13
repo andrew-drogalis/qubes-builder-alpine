@@ -1,0 +1,42 @@
+# X
+xinit
+xorg-server
+xterm
+setxkbmap
+xrandr
+
+# Basic utils
+chrony
+cups
+net-tools
+sudo
+wget
+openssh
+htop
+
+# User env
+ldns
+tmux
+vim
+
+# Fonts
+terminus-font
+ttf-dejavu
+ttf-inconsolata
+ttf-linux-libertine
+
+# Gnome
+gnome-settings-daemon
+gtk-engines
+gvfs
+
+# Desktop
+pcmanfm
+xfce4-terminal
+xfce4-settings
+evince
+faenza-icon-theme-libreoffice
+pavucontrol
+
+# Major "productivity" applications
+firefox

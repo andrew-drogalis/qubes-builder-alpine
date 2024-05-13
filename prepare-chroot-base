@@ -1,0 +1,48 @@
+#!/bin/sh
+# vim: set ts=4 sw=4 sts=4 et :
+### prepare-chroot-base : Create a (any) chroot instance of Alpine Linux
+### May be called from ./scripts/01_install_core.sh or ./prepare-chroot-base
+echo "--> Alpine Linux prepare-chroot-base"
+
+INSTALLDIR="$1"
+DIST="$2"
+
+DIST_NAME="alpinelinux"
+DIST_VER="v${DIST#alpine}"
+DIST_VER="${DIST_VER/3/3.}"
+ 
+if [ -z "${DIST_NAME}" ]; then
+    error "Please provide DIST_NAME in environment."
+fi
+
+if [ -z "${DIST_VER}" ]; then
+    error "Please provide DIST_VER in environment."
+fi
+
+BOOTSTRAP_DIR="${CACHEDIR}/bootstrap"
+ALPINELINUX_PLUGIN_DIR="${ALPINELINUX_PLUGIN_DIR:-"${SCRIPTSDIR}/.."}"
+ALPINELINUX_VERSION=${DIST_VER:-latest-stable}
+ALPINELINUX_MIRROR=${ALPINELINUX_MIRROR:-http://dl-cdn.alpinelinux.org/alpine}
+
+set -e
+if [ "$VERBOSE" -ge 2 ] || [ "$DEBUG" -gt 0 ]; then
+    set -x
+fi
+
+exit_prepare() {
+    local exit_code=$?
+    echo "  --> Unbinding INSTALLDIR..."
+    umount ${BOOTSTRAP_DIR}/mnt || true
+    exit $exit_code
+}
+
+trap 'exit_prepare' 0 1 2 3 6 15
+
+echo "  --> Binding INSTALLDIR '${INSTALLDIR}' to bootstrap environment..."
+mkdir -p "${BOOTSTRAP_DIR}/mnt"
+mount --bind "$INSTALLDIR" "${BOOTSTRAP_DIR}/mnt"
+
+echo "  --> Installing core apk packages..."
+"$BOOTSTRAP_DIR"/sbin/apk.static -X $ALPINELINUX_MIRROR/$ALPINELINUX_VERSION/main -U --allow-untrusted -p "$INSTALLDIR" --initdb add alpine-base
+
+touch "${INSTALLDIR}/.prepared_base"

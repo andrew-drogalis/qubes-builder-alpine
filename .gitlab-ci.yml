@@ -1,0 +1,107 @@
+stages:
+  - build
+  - release
+
+variables:
+  GIT_STRATEGY: clone
+  GIT_DEPTH: "500"
+
+.verify:
+  stage: build
+  rules:
+    - if: $CI_MERGE_REQUEST_ID
+  interruptible: true
+  script:
+    - |
+      sudo apk add rpm wget losetup coreutils eudev e2fsprogs xen
+      doas addgroup $USER abuild
+      export PATH="$PATH:$CI_PROJECT_DIR/.gitlab/bin"
+      git clone https://github.com/QubesOS/qubes-builder
+      mkdir qubes-builder/qubes-src
+      ln -s $CI_PROJECT_DIR qubes-builder/qubes-src/builder-alpine
+      cp builder.conf qubes-builder/.
+      git clone https://github.com/QubesOS/qubes-linux-template-builder qubes-builder/qubes-src/linux-template-builder
+      echo "%define _arch x86_64" >> qubes-builder/qubes-src/linux-template-builder/templates.spec
+      cd qubes-builder
+      make linux-template-builder
+      cp qubes-src/linux-template-builder/rpm/noarch/qubes-template-*.rpm $CI_PROJECT_DIR/.
+  artifacts:
+    paths:
+      - qubes-template-*.rpm
+    expire_in: 7 days
+    when: always
+  tags:
+    - qubes-template
+
+verify-alpine319:
+  extends: .verify
+  variables: 
+    CI_ALPINE_TARGET_RELEASE: alpine319
+
+.build:
+  stage: build
+  rules:
+    - if: $CI_COMMIT_TAG
+  interruptible: true
+  script:
+    - |
+      sudo apk add rpm wget losetup coreutils eudev e2fsprogs xen
+      doas addgroup $USER abuild
+      export PATH="$PATH:$CI_PROJECT_DIR/.gitlab/bin"
+      git clone https://github.com/QubesOS/qubes-builder
+      mkdir qubes-builder/qubes-src
+      ln -s $CI_PROJECT_DIR qubes-builder/qubes-src/builder-alpine
+      cp builder.conf qubes-builder/.
+      git clone https://github.com/QubesOS/qubes-linux-template-builder qubes-builder/qubes-src/linux-template-builder
+      echo "%define _arch x86_64" >> qubes-builder/qubes-src/linux-template-builder/templates.spec
+      cd qubes-builder
+      make linux-template-builder
+      cp qubes-src/linux-template-builder/rpm/noarch/qubes-template-*.rpm $CI_PROJECT_DIR/.
+      cd $CI_PROJECT_DIR
+      CI_ALPINE_RPM_NAME="$(find qubes-template*.rpm)"
+      echo "ALPINE_RPM_NAME=$CI_ALPINE_RPM_NAME" > job.env
+      echo "Generating sha512sum"
+      sha512sum $CI_ALPINE_RPM_NAME > $CI_ALPINE_RPM_NAME.sha512sum
+  after_script:
+    - echo "JOB_ID=$CI_JOB_ID" >> job.env
+  artifacts:
+    paths:
+      - qubes-template*.rpm
+      - qubes-template*.sha512sum
+    expire_in: never
+    when: always
+    reports:
+      dotenv: job.env
+  tags:
+    - qubes-template
+
+build-alpine319:
+  extends: .build
+  variables: 
+    CI_ALPINE_TARGET_RELEASE: alpine319
+
+release:
+  stage: release
+  allow_failure: false
+  tags:
+    - qubes-template
+  rules:
+    - if: $CI_COMMIT_TAG
+  when: on_success
+  script:
+    - echo "Create Release $GI_COMMIT_TAG"
+    - echo $JOB_ID
+    - echo $ALPINE_RPM_NAME
+  release:
+    name: 'Release $CI_COMMIT_TAG'
+    description: 'Release $CI_COMMIT_TAG'
+    tag_name: '$CI_COMMIT_TAG'
+    ref: '$CI_COMMIT_SHA'
+    assets:
+      links:
+        - name: "$ALPINE_RPM_NAME"
+          filepath: "/template/qubes-template-$CI_COMMIT_TAG.rpm"
+          url: "https://lab.ilot.io/ayakael/qubes-builder-alpine/-/jobs/$JOB_ID/artifacts/raw/$ALPINE_RPM_NAME"
+        - name: "$ALPINE_RPM_NAME.sha512sum"
+          filepath: "/template/qubes-template-$CI_COMMIT_TAG.rpm.sha512sum"
+          url: "https://lab.ilot.io/ayakael/qubes-builder-alpine/-/jobs/$JOB_ID/artifacts/raw/$ALPINE_RPM_NAME.sha512sum"

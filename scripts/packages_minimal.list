@@ -1,0 +1,10 @@
+# X
+xorg
+xterm
+
+# Basic utils
+ethtool
+net-tools
+sudo
+wget
+diffutils

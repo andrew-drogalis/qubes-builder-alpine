@@ -1,0 +1,64 @@
+#!/bin/sh
+# vim: set ts=4 sw=4 sts=4 et :
+
+### prepare-chroot-builder : Create the build chroot instance of Alpine Linux
+### (in which to build Qubes packages)
+echo "--> Alpine Linux prepare-chroot-builder"
+
+PLUGIN_DIR="$(dirname $0)"
+INSTALLDIR="$1"
+DISTRO="$2"
+
+SCRIPTSDIR=${ALPINELINUX_PLUGIN_DIR}scripts
+export INSTALLDIR SCRIPTSDIR
+
+# do not make volatile private key dir for the package builds themselves
+# this is interpreted by scripts/alpine-chroot
+SKIP_VOLATILE_SECRET_KEY_DIR=true
+export SKIP_VOLATILE_SECRET_KEY_DIR
+
+set -e
+[ "$VERBOSE" -ge 1 -o "$DEBUG" -gt 0 ] && echo "  --> INSTALLDIR: '$INSTALLDIR'"
+[ "$VERBOSE" -ge 2 -o "$DEBUG" -gt 0 ] && set -x
+
+# /home/user will exist if we've completed the build previously
+if ! [ -d "${INSTALLDIR}/home/user" ]; then
+    # It's non-existance means this is likely the initial run, so build it
+
+    mkdir -p "$INSTALLDIR"
+
+    echo "  --> Installing alpine linux build root:"
+    "${PLUGIN_DIR}/prepare-chroot-base" "$INSTALLDIR" "$DISTRO"
+
+    echo "  --> Configure system accounts..."
+    [ -n "$SUDO_UID" ] && USER_OPTS="-u ${SUDO_UID}"
+    [ -n "$USER_UID" ] && USER_OPTS="-u ${USER_UID}"
+    if [ -n "$USER_GID" ]; then
+        chroot "$INSTALLDIR" /bin/addgroup -g "$USER_GID" user
+    elif [ -n "$SUDO_GID" ]; then
+        chroot "$INSTALLDIR" /bin/addgroup -g "$SUDO_GID" user
+    else
+        chroot "$INSTALLDIR" /bin/addgroup user
+    fi
+    chroot "$INSTALLDIR" /bin/sh -c \
+        "useradd -g user -G wheel $USER_OPTS -m user; su -c 'mkdir qubes-src' - user"
+
+    echo "  --> Synchronize resolv.conf..."
+    cp /etc/resolv.conf "${INSTALLDIR}/etc/resolv.conf"
+
+    echo "  --> Installing required makepkg dependencies..."
+    pkgs="alpine-sdk"
+    "${SCRIPTSDIR}/alpine-chroot" "$INSTALLDIR" /bin/sh -c \
+        "apk add $pkgs"
+
+    # makepkg internally calls sudo without '-E', so we need to add an
+    # env_keep to honor proxy settings
+    echo "  --> Configure sudo..."
+    cat > "${INSTALLDIR}/etc/sudoers.d/qubes-build-user" <<EOF
+Defaults env_keep += "http_proxy https_proxy ftp_proxy"
+%wheel ALL=(ALL) NOPASSWD: ALL
+EOF
+
+    # Register custom repository (it will be created later)
+    echo "file:///tmp/qubes-packages-mirror-repo/pkgs" | tee -a "${INSTALLDIR}/etc/apk/repositories" 
+fi
